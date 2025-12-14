@@ -1,19 +1,29 @@
 #!/bin/sh
+set -e
 
-run()
-{ 
-    chmod 0600 /data/etc/fetchmailrc
-    chown fetchmail:fetchmail /data/etc/
-    chown fetchmail:fetchmail /data/etc/fetchmailrc
-    touch /data/log/fetchmail.log
-    chown fetchmail:fetchmail /data/log/fetchmail.log
-    # run cron daemon, which executes the logrotate job
-    crond
-    # collect log informations for docker logs or docker-compose logs
-    tail -n 50 -f /data/log/fetchmail.log &
-    # run fetchmail as endless loop with reduced permissions
-    su -s /bin/sh -c '/bin/sh /bin/fetchmail_daemon.sh' fetchmail
-}
+# Copy sample config if none exists
+if [ ! -f /data/etc/fetchmailrc ]; then
+    echo "No fetchmailrc found, copying sample..."
+    cp /data/etc/sample/fetchmailrc.sample /data/etc/fetchmailrc
+fi
 
-run
+# Fix permissions (fetchmail is strict about this)
+chmod 0700 /data/etc/fetchmailrc
+chown -R fetchmail:fetchmail /data/etc
 
+# Set poll interval (default 300s)
+FETCHMAIL_POLL=${TIMECRON:-300}
+
+echo "Starting fetchmail with poll interval ${FETCHMAIL_POLL}s..."
+
+# Run fetchmail
+# --nodetach: keep process in foreground
+# --daemon: poll every X seconds
+# --nosyslog: don't use syslog
+# --logfile /dev/stdout: write logs to stdout for Docker
+exec su-exec fetchmail fetchmail \
+    -f /data/etc/fetchmailrc \
+    --nodetach \
+    --daemon "$FETCHMAIL_POLL" \
+    --nosyslog \
+    --logfile /dev/stdout

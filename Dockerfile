@@ -1,30 +1,35 @@
 FROM alpine:latest
 
-#install necessary packages
-RUN apk update; \
-    apk upgrade; \
-    apk add fetchmail openssl logrotate;
+# Install necessary packages
+# tini: process manager for signal forwarding
+# su-exec: better su/sudo alternative for containers
+# ca-certificates: required for SSL/TLS
+RUN apk add --no-cache \
+    fetchmail \
+    openssl \
+    ca-certificates \
+    tini \
+    su-exec
 
-#set workdir
+# set workdir
 WORKDIR /data
 
-#setup fetchmail stuff, fetchmail user is created by installing the fetchmail package
-RUN chown fetchmail:fetchmail /data; \
-    chmod 0744 /data; 
+# setup fetchmail stuff
+# fetchmail user is created by installing the fetchmail package
+# we create directories with correct permissions upfront
+RUN mkdir -p /data/etc /data/log && \
+    chown -R fetchmail:fetchmail /data
 
-#add logrotate fetchmail config
-ADD etc/logrotate.d/fetchmail /etc/logrotate.d/fetchmail
-#add startup script
-ADD start.sh /bin/start.sh
-#add fetchmail_daemon script
-ADD fetchmail_daemon.sh /bin/fetchmail_daemon.sh
-#copy sample config
+# add startup script
+COPY start.sh /bin/start.sh
+RUN chmod +x /bin/start.sh
+
+# copy sample config
 COPY fetchmailrc /data/etc/sample/fetchmailrc.sample
 
-#set startup script rights
-RUN chmod 0700 /bin/start.sh; \
-    chown fetchmail:fetchmail /bin/fetchmail_daemon.sh
-
 VOLUME ["/data"]
-CMD ["/bin/sh", "/bin/start.sh"]
 
+# Tini entrypoint ensures signals are handled correctly
+ENTRYPOINT ["/sbin/tini", "--"]
+
+CMD ["/bin/start.sh"]
